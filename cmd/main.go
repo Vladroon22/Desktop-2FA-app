@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Vladroon22/2FA/internal/core"
+	"github.com/Vladroon22/2FA/internal/update"
 )
 
 func isMobile() bool {
@@ -263,30 +264,12 @@ func main() {
 			dialog.ShowInformation("Copied", "Code copied to clipboard", window)
 		}
 	})
-	/*
-		qrButton := widget.NewButton("📂 Загрузить и декодировать QR-код", func() {
-			dialog.ShowFileOpen(func(uri fyne.URIReadCloser, err error) {
 
-				scanner := qrscanner.NewQRScanner(window)
-				if err != nil || uri == nil {
-					return
-				}
-				defer uri.Close()
+	IsUpToDate := widget.NewButton("Check for Updates", func() {
+		update.Fetch("v1.0.0")
+		myApp.Quit()
+	})
 
-				filename := uri.URI().Path()
-				secret, config, err := scanner.DecodeQRCode(filename)
-				if err != nil {
-					dialog.ShowError(err, window)
-					return
-				}
-
-				resultText.SetText(fmt.Sprintf("Декодировано из файла %s:\n%s %s %s", filename, config.Issuer, config.AccountName, secret))
-				statusLabel.SetText("QR-код загружен и декодирован")
-
-				scanner.StopScanning()
-			}, window)
-		})
-	*/
 	settingsContainer := container.NewVBox(
 		widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		themeSwitch,
@@ -296,7 +279,7 @@ func main() {
 		addButton,
 		removeButton,
 		copyButton,
-	//	qrButton,
+		IsUpToDate,
 	)
 
 	mainContainer := container.NewBorder(
