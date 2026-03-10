@@ -1,6 +1,7 @@
 package update
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,7 +9,38 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
+
+type releases struct {
+	TagName    string `json:"tag_name"`
+	Name       string `json:"name"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+func fetchVersions() ([]string, error) {
+	url := ("https://api.github.com/repos/Vladroon22/Desktop-2FA-app/releases")
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var releases []releases
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+
+	var versions []string
+	for _, release := range releases {
+		version := strings.TrimPrefix(release.TagName, "v")
+		versions = append(versions, version)
+	}
+
+	return versions, nil
+}
 
 func fetch(filename, vers string) error {
 	var apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa", vers)
@@ -87,7 +119,7 @@ func applyForUnix(filename string, rb io.ReadCloser) error {
 	return nil
 }
 
-func Fetch(vers string) error {
+func Fetch(currVers string) error {
 	currExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("access to current executable wasn't got: %v", err)
@@ -102,15 +134,17 @@ func Fetch(vers string) error {
 		return fmt.Errorf("%v", err)
 	}
 
-	fullName := strings.Split(fmt.Sprintf("%s-v%s", oldFile.Name(), vers), "-v") // name-vX.X.X --> name -v X.X.X
-
-	versName := fullName[1]
-
-	if versName == vers {
-		return fmt.Errorf("You're - Up-To-Date")
+	versions, err := fetchVersions()
+	if err != nil {
+		return fmt.Errorf("%v", err)
 	}
 
-	if err := fetch(fullName[0], vers); err != nil {
+	vers := versions[len(versions)-1]
+	if semver.Compare(currVers, vers) == 0 {
+		return fmt.Errorf("You're up-to-date")
+	}
+
+	if err := fetch(oldFile.Name(), vers); err != nil {
 		return fmt.Errorf("%v", err)
 	}
 

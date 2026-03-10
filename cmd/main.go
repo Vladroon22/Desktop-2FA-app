@@ -18,6 +18,14 @@ import (
 	"github.com/Vladroon22/2FA/internal/update"
 )
 
+var (
+	appVersion string
+)
+
+func GetVersion() string {
+	return appVersion
+}
+
 func isMobile() bool {
 	if fyne.CurrentDevice().IsMobile() {
 		return true
@@ -37,6 +45,7 @@ type AppItem struct {
 }
 
 func main() {
+	v := GetVersion()
 	myApp := app.New()
 	myApp.Settings().SetTheme(theme.DefaultTheme())
 
@@ -266,7 +275,7 @@ func main() {
 	})
 
 	IsUpToDate := widget.NewButton("Check for Updates", func() {
-		if err := update.Fetch("1.0.0"); err != nil {
+		if err := update.Fetch(v); err != nil {
 			dialog.ShowInformation("Result of checking", err.Error(), window)
 		} else {
 			myApp.Quit()

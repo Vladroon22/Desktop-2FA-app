@@ -2,7 +2,10 @@ module github.com/Vladroon22/2FA
 
 go 1.25.0
 
-require github.com/pquerna/otp v1.5.0
+require (
+	github.com/pquerna/otp v1.5.0
+	golang.org/x/mod v0.33.0
+)
 
 require (
 	fyne.io/systray v1.11.1-0.20250603113521-ca66a66d8b58 // indirect
