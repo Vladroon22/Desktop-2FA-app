@@ -11,10 +11,10 @@ import (
 )
 
 func fetch(filename, vers string) error {
-	var apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/tag/v%s/2fa", vers)
+	var apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa", vers)
 
 	client := &http.Client{
-		Timeout: time.Second * 15,
+		Timeout: time.Second * 30,
 	}
 
 	req, err := http.NewRequest("GET", apiURL, nil)
@@ -40,12 +40,12 @@ func fetch(filename, vers string) error {
 		if err := applyForWin(filename, resp.Body); err != nil {
 			return err
 		}
-	case "linux", "darwin":
+	case "linux":
 		if err := applyForUnix(filename, resp.Body); err != nil {
 			return err
 		}
 	default:
-		return fmt.Errorf("it isn't implemented for %s", OS)
+		return fmt.Errorf("it isn't implemented for your %s", OS)
 	}
 
 	return nil
@@ -102,8 +102,17 @@ func Fetch(vers string) error {
 		return fmt.Errorf("%v", err)
 	}
 
-	if err := fetch(oldFile.Name()+"-"+vers, vers); err != nil {
+	fullName := strings.Split(fmt.Sprintf("%s-v%s", oldFile.Name(), vers), "-v") // name-vX.X.X --> name -v X.X.X
+
+	versName := fullName[1]
+
+	if versName == vers {
+		return fmt.Errorf("You're - Up-To-Date")
+	}
+
+	if err := fetch(fullName[0], vers); err != nil {
 		return fmt.Errorf("%v", err)
 	}
+
 	return nil
 }

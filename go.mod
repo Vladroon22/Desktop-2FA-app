@@ -1,6 +1,6 @@
 module github.com/Vladroon22/2FA
 
-go 1.24.6
+go 1.25.0
 
 require github.com/pquerna/otp v1.5.0
 
@@ -33,7 +33,7 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -41,6 +41,5 @@ require (
 require (
 	fyne.io/fyne/v2 v2.7.1
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
-	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.11.1 // indirect
 )

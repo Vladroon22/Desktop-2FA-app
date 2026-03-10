@@ -266,8 +266,11 @@ func main() {
 	})
 
 	IsUpToDate := widget.NewButton("Check for Updates", func() {
-		update.Fetch("v1.0.0")
-		myApp.Quit()
+		if err := update.Fetch("1.0.0"); err != nil {
+			dialog.ShowInformation("Result of checking", err.Error(), window)
+		} else {
+			myApp.Quit()
+		}
 	})
 
 	settingsContainer := container.NewVBox(
