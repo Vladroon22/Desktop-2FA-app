@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -50,7 +51,16 @@ func fetch(c context.Context, filename, vers string) error {
 	ctx, cancel := context.WithTimeout(c, time.Second*15)
 	defer cancel()
 
-	var apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa", vers)
+	var apiURL string
+	OS := runtime.GOOS
+
+	switch OS {
+	case "linux":
+		apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa-%s", vers, OS)
+		log.Println(OS)
+	case "windows":
+		apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa-%s.exe", vers, OS)
+	}
 
 	client := &http.Client{
 		Timeout: time.Second * 15,
@@ -73,7 +83,6 @@ func fetch(c context.Context, filename, vers string) error {
 		return fmt.Errorf("resp status code: %s", resp.Status)
 	}
 
-	OS := runtime.GOOS
 	switch OS {
 	case "windows":
 		if err := applyForWin(filename, resp.Body); err != nil {
