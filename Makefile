@@ -1,7 +1,7 @@
 .PHONY: app
 
 linux:
-	go build -ldflags="-X main.appVersion=1.0.6" -o ./2fa-linux cmd/main.go 
+	go build -ldflags="-X main.appVersion=1.0.5" -o ./2fa-linux cmd/main.go 
 
 win:
-	go build -ldflags="-X main.appVersion=1.0.6" -o ./2fa-windows cmd/main.go 
+	go build -ldflags="-X main.appVersion=1.0.5" -o ./2fa-windows.exe cmd/main.go 

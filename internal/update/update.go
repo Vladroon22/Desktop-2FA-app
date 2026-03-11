@@ -152,7 +152,10 @@ func delete() error {
 }
 
 func Fetch(ctx context.Context, currVers string) error {
-	const UpToDate = "You're up-to-date"
+	const (
+		UpToDate   = "You're up-to-date"
+		OverToDate = "You're is too up-to-dated"
+	)
 	var (
 		err    error
 		latest string
@@ -169,8 +172,12 @@ func Fetch(ctx context.Context, currVers string) error {
 		return fmt.Errorf("%v", err)
 	}
 
-	if semver.Compare("v"+currVers, "v"+latest) == 0 {
+	res := semver.Compare("v"+currVers, "v"+latest)
+	switch res {
+	case 0:
 		return fmt.Errorf("%v", UpToDate)
+	case 1:
+		return fmt.Errorf("%v", OverToDate)
 	}
 
 	newName := fmt.Sprintf("2fa-v%s", latest)
