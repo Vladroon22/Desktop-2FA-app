@@ -145,33 +145,31 @@ func delete() error {
 }
 
 func Fetch(ctx context.Context, currVers string) error {
+	const UpToDate = "You're up-to-date"
 	var (
 		err    error
 		latest string
 	)
 
 	defer func(err error) {
-		if err == nil {
+		if err != nil && err.Error() != UpToDate {
 			delete()
 		}
 	}(err)
 
 	latest, err = fetchVersions(ctx)
 	if err != nil {
-		err = fmt.Errorf("%v", err)
-		return err
+		return fmt.Errorf("%v", err)
 	}
 
 	if semver.Compare("v"+currVers, "v"+latest) == 0 {
-		err = fmt.Errorf("You're up-to-date")
-		return err
+		return fmt.Errorf("%v", UpToDate)
 	}
 
 	newName := fmt.Sprintf("2fa-v%s", latest)
 	err = fetch(ctx, newName, latest)
 	if err != nil {
-		err = fmt.Errorf("%v", err)
-		return err
+		return fmt.Errorf("%v", err)
 	}
 
 	return nil
