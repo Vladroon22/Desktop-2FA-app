@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -57,7 +56,6 @@ func fetch(c context.Context, filename, vers string) error {
 	switch OS {
 	case "linux":
 		apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa-%s", vers, OS)
-		log.Println(OS)
 	case "windows":
 		apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa-%s.exe", vers, OS)
 	}
