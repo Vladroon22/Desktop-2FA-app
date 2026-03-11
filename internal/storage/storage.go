@@ -1,315 +1,194 @@
-package gpg
+package storage
 
 import (
-	"bytes"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"os/exec"
-	"strings"
+	"sync"
+
+	"github.com/zalando/go-keyring"
 )
 
-// GPGWrapper представляет обертку над утилитой gpg
-type GPGWrapper struct {
-	binaryPath string
-	homeDir    string
-	armor      bool
+type Config struct {
+	ServiceName string            `json:"service_name"`
+	Usernames   map[string]string `json:"usernames"`
 }
 
-// NewGPGWrapper создает новый экземпляр обертки
-func NewGPGWrapper(homeDir string) *GPGWrapper {
-	return &GPGWrapper{
-		binaryPath: "gpg",
-		homeDir:    homeDir,
-		armor:      false,
-	}
+type KeyManager struct {
+	serviceName string
+	config      *Config
+	configFile  string
+	mu          sync.Mutex
 }
 
-// SetArmor включает/выключает текстовый вывод (ASCII-armor)
-func (g *GPGWrapper) SetArmor(useArmor bool) {
-	g.armor = useArmor
+func NewKeyManager(serviceName string) (*KeyManager, error) {
+	configFile := "conf.json"
+
+	km := &KeyManager{
+		serviceName: serviceName,
+		configFile:  configFile,
+		config: &Config{
+			ServiceName: serviceName,
+			Usernames:   make(map[string]string),
+		},
+	}
+
+	if err := km.loadConfig(); err != nil {
+		log.Printf("Warning: could not load config: %v", err)
+	}
+
+	return km, nil
 }
 
-// buildArgs формирует базовые аргументы команды
-func (g *GPGWrapper) buildArgs(extraArgs ...string) []string {
-	args := []string{}
+func (km *KeyManager) withWriteAccess(operation func() error) error {
+	km.mu.Lock()
+	defer km.mu.Unlock()
 
-	if g.homeDir != "" {
-		args = append(args, "--homedir", g.homeDir)
+	var originalMode os.FileMode
+	if info, err := os.Stat(km.configFile); err == nil {
+		originalMode = info.Mode()
 	}
 
-	if g.armor {
-		args = append(args, "--armor")
+	if err := os.Chmod(km.configFile, 0600); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to set write perms: %w", err)
 	}
 
-	args = append(args, extraArgs...)
-	return args
+	defer func() {
+		if originalMode != 0 {
+			os.Chmod(km.configFile, originalMode)
+		}
+	}()
+
+	return operation()
 }
 
-// exec выполняет команду gpg и возвращает результат
-func (g *GPGWrapper) exec(args []string, input []byte) ([]byte, error) {
-	cmd := exec.Command(g.binaryPath, args...)
+func (km *KeyManager) withReadAccess(operation func() error) error {
+	km.mu.Lock()
+	defer km.mu.Unlock()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if input != nil {
-		cmd.Stdin = bytes.NewReader(input)
-	}
-
-	err := cmd.Run()
+	info, err := os.Stat(km.configFile)
 	if err != nil {
-		return nil, fmt.Errorf("gpg error: %v, stderr: %s", err, stderr.String())
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	return stdout.Bytes(), nil
+	originalMode := info.Mode()
+
+	if err := os.Chmod(km.configFile, 0400); err != nil {
+		return fmt.Errorf("failed to set read perms: %w", err)
+	}
+	defer os.Chmod(km.configFile, originalMode)
+
+	return operation()
 }
 
-// KeyInfo содержит информацию о ключе
-type KeyInfo struct {
-	KeyID       string
-	UserID      string
-	Fingerprint string
-	Expires     string
-	Trust       string
+func (km *KeyManager) SaveAPIKey(keyName string, apiKey string) error {
+	username := fmt.Sprintf("key_%s", keyName)
+
+	km.config.Usernames[keyName] = username
+
+	if err := keyring.Set(km.serviceName, username, apiKey); err != nil {
+		return fmt.Errorf("failed to save API key: %w", err)
+	}
+
+	return km.saveConfig()
 }
 
-// ListKeys возвращает список открытых ключей
-func (g *GPGWrapper) ListKeys() ([]KeyInfo, error) {
-	args := g.buildArgs("--list-keys", "--with-colons")
-	output, err := g.exec(args, nil)
+func (km *KeyManager) GetAPIKey(keyName string) (string, error) {
+	username, exists := km.config.Usernames[keyName]
+	if !exists {
+		return "", fmt.Errorf("API key %s not found", keyName)
+	}
+
+	secret, err := keyring.Get(km.serviceName, username)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("failed to get API key: %w", err)
 	}
 
-	return g.parseKeyList(output)
+	return secret, nil
 }
 
-// ListSecretKeys возвращает список секретных ключей
-func (g *GPGWrapper) ListSecretKeys() ([]KeyInfo, error) {
-	args := g.buildArgs("--list-secret-keys", "--with-colons")
-	output, err := g.exec(args, nil)
-	if err != nil {
-		return nil, err
+func (km *KeyManager) saveConfig() error {
+	return km.withWriteAccess(func() error {
+		data, err := json.MarshalIndent(km.config, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal config: %w", err)
+		}
+		defer km.ManageFile()
+
+		if _, err := os.Stat(km.configFile); os.IsNotExist(err) {
+			if err := os.WriteFile(km.configFile, data, 0600); err != nil {
+				return fmt.Errorf("failed to write file: %w", err)
+			}
+			return os.Chmod(km.configFile, 0000)
+		}
+
+		return os.WriteFile(km.configFile, data, 0600)
+	})
+}
+
+func (km *KeyManager) loadConfig() error {
+	return km.withReadAccess(func() error {
+		data, err := os.ReadFile(km.configFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		defer km.ManageFile()
+
+		if err := json.Unmarshal(data, &km.config); err != nil {
+			return fmt.Errorf("failed to unmarshal config: %w", err)
+		}
+
+		return nil
+	})
+}
+
+func (km *KeyManager) Delete(keyName string) error {
+	username, exists := km.config.Usernames[keyName]
+	if !exists {
+		return fmt.Errorf("key %s not found", keyName)
 	}
 
-	return g.parseKeyList(output)
+	if err := keyring.Delete(km.serviceName, username); err != nil {
+		return fmt.Errorf("failed to delete from keyring: %w", err)
+	}
+
+	delete(km.config.Usernames, keyName)
+
+	return km.saveConfig()
 }
 
-// parseKeyList парсит вывод gpg --with-colons
-func (g *GPGWrapper) parseKeyList(data []byte) ([]KeyInfo, error) {
-	lines := strings.Split(string(data), "\n")
-	var keys []KeyInfo
-	var currentKey *KeyInfo
+func (km *KeyManager) ManageFile() error {
+	return os.Chmod(km.configFile, 0000)
+}
 
-	for _, line := range lines {
-		if line == "" {
+type Data struct {
+	secret string
+	name   string
+}
+
+func (km *KeyManager) List() map[string]string {
+	if err := km.loadConfig(); err != nil {
+		log.Printf("Warning: could not load config: %v", err)
+		return nil
+	}
+
+	m := make(map[string]string, len(km.config.Usernames))
+	for k := range km.config.Usernames {
+		s, err := km.GetAPIKey(k)
+		if err != nil {
+			log.Println(err)
 			continue
 		}
 
-		fields := strings.Split(line, ":")
-		if len(fields) < 5 {
-			continue
-		}
-
-		switch fields[0] {
-		case "pub", "sec":
-			// Новый ключ
-			if currentKey != nil {
-				keys = append(keys, *currentKey)
-			}
-			currentKey = &KeyInfo{
-				KeyID:   fields[4],
-				Expires: fields[6],
-				Trust:   fields[1],
-			}
-		case "uid":
-			// Идентификатор пользователя
-			if currentKey != nil {
-				currentKey.UserID = fields[9]
-			}
-		case "fpr":
-			// Отпечаток ключа
-			if currentKey != nil {
-				currentKey.Fingerprint = fields[9]
-			}
-		}
+		m[k] = s
 	}
 
-	if currentKey != nil {
-		keys = append(keys, *currentKey)
-	}
-
-	return keys, nil
-}
-
-// Encrypt шифрует данные для указанных получателей
-func (g *GPGWrapper) Encrypt(data []byte, recipients []string, sign bool) ([]byte, error) {
-	args := []string{"--encrypt"}
-
-	for _, recipient := range recipients {
-		args = append(args, "--recipient", recipient)
-	}
-
-	if sign {
-		args = append(args, "--sign")
-	}
-
-	args = g.buildArgs(args...)
-	return g.exec(args, data)
-}
-
-// Decrypt расшифровывает данные
-func (g *GPGWrapper) Decrypt(data []byte) ([]byte, error) {
-	args := g.buildArgs("--decrypt")
-	return g.exec(args, data)
-}
-
-// Sign создает подпись для данных
-func (g *GPGWrapper) Sign(data []byte, detach bool) ([]byte, error) {
-	args := []string{}
-
-	if detach {
-		args = append(args, "--detach-sign")
-	} else {
-		args = append(args, "--sign")
-	}
-
-	args = g.buildArgs(args...)
-	return g.exec(args, data)
-}
-
-// Verify проверяет подпись
-func (g *GPGWrapper) Verify(signature, data []byte) (bool, error) {
-	// Создаем временные файлы для подписи и данных
-	sigFile, err := os.CreateTemp("", "gpg-sig-*")
-	if err != nil {
-		return false, err
-	}
-	defer os.Remove(sigFile.Name())
-	defer sigFile.Close()
-
-	dataFile, err := os.CreateTemp("", "gpg-data-*")
-	if err != nil {
-		return false, err
-	}
-	defer os.Remove(dataFile.Name())
-	defer dataFile.Close()
-
-	// Записываем данные
-	if _, err := sigFile.Write(signature); err != nil {
-		return false, err
-	}
-	if _, err := dataFile.Write(data); err != nil {
-		return false, err
-	}
-
-	args := g.buildArgs("--verify", sigFile.Name(), dataFile.Name())
-	_, err = g.exec(args, nil)
-	return err == nil, err
-}
-
-// GenerateKey генерирует новую пару ключей
-func (g *GPGWrapper) GenerateKey(name, email, passphrase string) error {
-	// Создаем временный файл с параметрами для batch-режима
-	batchFile, err := os.CreateTemp("", "gpg-batch-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(batchFile.Name())
-	defer batchFile.Close()
-
-	// Формируем параметры для генерации ключа в batch-режиме
-	batchContent := fmt.Sprintf(`Key-Type: RSA
-Key-Length: 3072
-Subkey-Type: RSA
-Subkey-Length: 3072
-Name-Real: %s
-Name-Email: %s
-Expire-Date: 0
-Passphrase: %s
-`, name, email, passphrase)
-
-	if _, err := batchFile.WriteString(batchContent); err != nil {
-		return err
-	}
-
-	args := g.buildArgs("--batch", "--generate-key", batchFile.Name())
-	_, err = g.exec(args, nil)
-	return err
-}
-
-// ImportKey импортирует ключ из данных
-func (g *GPGWrapper) ImportKey(keyData []byte) error {
-	args := g.buildArgs("--import")
-	_, err := g.exec(args, keyData)
-	return err
-}
-
-// ExportKey экспортирует открытый ключ
-func (g *GPGWrapper) ExportKey(keyID string) ([]byte, error) {
-	args := g.buildArgs("--export", keyID)
-	return g.exec(args, nil)
-}
-
-// ExportSecretKey экспортирует секретный ключ
-func (g *GPGWrapper) ExportSecretKey(keyID string) ([]byte, error) {
-	args := g.buildArgs("--export-secret-keys", keyID)
-	return g.exec(args, nil)
-}
-
-// DeleteKey удаляет ключ
-func (g *GPGWrapper) DeleteKey(keyID string, secret bool) error {
-	args := []string{}
-	if secret {
-		args = append(args, "--delete-secret-key")
-	} else {
-		args = append(args, "--delete-key")
-	}
-	args = append(args, keyID)
-
-	args = g.buildArgs(args...)
-	_, err := g.exec(args, nil)
-	return err
-}
-
-// SignKey подписывает ключ
-func (g *GPGWrapper) SignKey(keyID string, local bool) error {
-	args := []string{}
-	if local {
-		args = append(args, "--lsign-key")
-	} else {
-		args = append(args, "--sign-key")
-	}
-	args = append(args, keyID)
-
-	args = g.buildArgs(args...)
-	_, err := g.exec(args, nil)
-	return err
-}
-
-// ChangePassphrase меняет пароль на ключе
-func (g *GPGWrapper) ChangePassphrase(keyID string) error {
-	args := g.buildArgs("--change-passphrase", keyID)
-	_, err := g.exec(args, nil)
-	return err
-}
-
-// GetFingerprint получает отпечаток ключа
-func (g *GPGWrapper) GetFingerprint(keyID string) (string, error) {
-	args := g.buildArgs("--fingerprint", "--with-colons", keyID)
-	output, err := g.exec(args, nil)
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		fields := strings.Split(line, ":")
-		if fields[0] == "fpr" && len(fields) > 9 {
-			return fields[9], nil
-		}
-	}
-
-	return "", fmt.Errorf("fingerprint not found for key %s", keyID)
+	return m
 }

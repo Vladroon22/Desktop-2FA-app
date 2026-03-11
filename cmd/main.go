@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"log"
-	"runtime"
+	"math/rand"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -15,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Vladroon22/2FA/internal/core"
+	"github.com/Vladroon22/2FA/internal/storage"
 	"github.com/Vladroon22/2FA/internal/update"
 )
 
@@ -24,14 +29,6 @@ var (
 
 func GetVersion() string {
 	return appVersion
-}
-
-func isMobile() bool {
-	if fyne.CurrentDevice().IsMobile() {
-		return true
-	}
-
-	return runtime.GOOS == "android" || runtime.GOOS == "ios"
 }
 
 // Структура для хранения данных приложения
@@ -46,6 +43,13 @@ type AppItem struct {
 
 func main() {
 	v := GetVersion()
+
+	store, err := storage.NewKeyManager("Custom-2FA")
+	if err != nil || store == nil {
+		log.Fatalln(err)
+	}
+	defer store.ManageFile()
+
 	myApp := app.New()
 	myApp.Settings().SetTheme(theme.DefaultTheme())
 
@@ -56,7 +60,6 @@ func main() {
 	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
 	titleLabel.Alignment = fyne.TextAlignCenter
 
-	// switcher of theme (Dark/Light)
 	themeSwitch := widget.NewRadioGroup([]string{"Dark", "Light"}, func(selected string) {
 		switch selected {
 		case "Dark":
@@ -69,7 +72,6 @@ func main() {
 	themeSwitch.SetSelected("Dark")
 	themeSwitch.Horizontal = true
 
-	var appItems []AppItem
 	colors := []color.NRGBA{
 		{R: 0, G: 120, B: 255, A: 255},  // Blue
 		{R: 255, G: 60, B: 60, A: 255},  // Red
@@ -78,7 +80,40 @@ func main() {
 		{R: 255, G: 140, B: 0, A: 255},  // Orange
 	}
 
-	var nextID, selectedID = 1, -1
+	var (
+		nextID     = 1
+		selectedID = -1
+	)
+
+	data := store.List()
+	var appItems []AppItem
+
+	if len(data) > 0 {
+		appItems = make([]AppItem, 0, len(store.List()))
+
+		now := time.Now()
+		rand.Seed(time.Now().UnixNano())
+		for k, v := range data {
+			item := AppItem{ID: nextID}
+
+			code, err := core.GenerateOTP(now, v)
+			if err == nil {
+				item.Code = code
+			} else {
+				item.Code = "ERROR"
+				log.Printf("Error generating OTP for %s: %v", k, err)
+				continue
+			}
+
+			i := rand.Intn(len(colors))
+			item.Color = colors[i]
+			item.Name = k
+			item.Secret = v
+
+			appItems = append(appItems, item)
+			nextID++
+		}
+	}
 
 	appList := widget.NewList(
 		func() int {
@@ -135,6 +170,9 @@ func main() {
 		}
 	}
 
+	StopOSChan := make(chan os.Signal, 1)
+	signal.Notify(StopOSChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
 	go func() {
 		for {
 			time.Sleep(time.Second)
@@ -161,6 +199,13 @@ func main() {
 
 				appList.Refresh()
 			})
+
+			select {
+			case <-StopOSChan:
+				myApp.Quit()
+			default:
+				continue
+			}
 		}
 	}()
 
@@ -182,6 +227,11 @@ func main() {
 			dialog.ShowConfirm("Remove App", "Are you sure you want to remove '"+appItems[indexToRemove].Name+"'?",
 				func(confirmed bool) {
 					if confirmed {
+						if err := store.Delete(appItems[indexToRemove].Name); err != nil {
+							dialog.ShowError(fmt.Errorf("%v", "App wasn't successfully!"), window)
+							return
+						}
+
 						appItems = append(appItems[:indexToRemove], appItems[indexToRemove+1:]...)
 						selectedID = -1
 						appList.Refresh()
@@ -237,6 +287,11 @@ func main() {
 				return
 			}
 
+			if err := store.SaveAPIKey(nameEntry.Text, secretEntry.Text); err != nil {
+				dialog.ShowError(fmt.Errorf("%v", "App wasn't successfully!"), window)
+				return
+			}
+
 			newItem := AppItem{
 				Name:     nameEntry.Text,
 				Code:     code,
@@ -275,7 +330,7 @@ func main() {
 	})
 
 	IsUpToDate := widget.NewButton("Check for Updates", func() {
-		if err := update.Fetch(v); err != nil {
+		if err := update.Fetch(context.Background(), v); err != nil {
 			dialog.ShowInformation("Result of checking", err.Error(), window)
 		} else {
 			myApp.Quit()
@@ -310,14 +365,10 @@ func main() {
 	)
 
 	window.SetContent(mainContainer)
-
-	if !isMobile() {
-		window.Resize(fyne.NewSize(800, 600))
-		window.CenterOnScreen()
-		window.SetFixedSize(false)
-	} else {
-		window.SetFullScreen(true)
-	}
-
+	window.Resize(fyne.NewSize(800, 600))
+	window.CenterOnScreen()
+	window.SetFixedSize(false)
 	window.ShowAndRun()
+
+	log.Println("Gracefull shutdown")
 }

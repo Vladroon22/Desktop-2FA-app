@@ -1,6 +1,7 @@
 package update
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,18 +20,21 @@ type releases struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
-func fetchVersions() ([]string, error) {
+func fetchVersions(c context.Context) (string, error) {
+	_, cancel := context.WithTimeout(c, time.Second*15)
+	defer cancel()
+
 	url := ("https://api.github.com/repos/Vladroon22/Desktop-2FA-app/releases")
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	var releases []releases
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	var versions []string
@@ -39,17 +43,20 @@ func fetchVersions() ([]string, error) {
 		versions = append(versions, version)
 	}
 
-	return versions, nil
+	return versions[0], nil
 }
 
-func fetch(filename, vers string) error {
+func fetch(c context.Context, filename, vers string) error {
+	ctx, cancel := context.WithTimeout(c, time.Second*15)
+	defer cancel()
+
 	var apiURL = fmt.Sprintf("https://github.com/Vladroon22/Desktop-2FA-app/releases/download/v%s/2fa", vers)
 
 	client := &http.Client{
-		Timeout: time.Second * 30,
+		Timeout: time.Second * 15,
 	}
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
@@ -113,20 +120,20 @@ func applyForUnix(filename string, rb io.ReadCloser) error {
 	}
 
 	if err := newFile.Chmod(0755); err != nil {
-		return fmt.Errorf("chmod +x wasnt't executed: %v", err)
+		return fmt.Errorf("chmod +x wasn't executed: %v", err)
 	}
 
 	return nil
 }
 
-func Fetch(currVers string) error {
+func delete() error {
 	currExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("access to current executable wasn't got: %v", err)
 	}
 
 	if strings.Contains(currExe, "(deteled)") {
-		return fmt.Errorf("executable is deleted")
+		return nil
 	}
 
 	oldFile, err := os.Stat(currExe)
@@ -134,18 +141,37 @@ func Fetch(currVers string) error {
 		return fmt.Errorf("%v", err)
 	}
 
-	versions, err := fetchVersions()
+	return os.Remove(oldFile.Name())
+}
+
+func Fetch(ctx context.Context, currVers string) error {
+	var (
+		err    error
+		latest string
+	)
+
+	defer func(err error) {
+		if err == nil {
+			delete()
+		}
+	}(err)
+
+	latest, err = fetchVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("%v", err)
+		err = fmt.Errorf("%v", err)
+		return err
 	}
 
-	vers := versions[len(versions)-1]
-	if semver.Compare(currVers, vers) == 0 {
-		return fmt.Errorf("You're up-to-date")
+	if semver.Compare("v"+currVers, "v"+latest) == 0 {
+		err = fmt.Errorf("You're up-to-date")
+		return err
 	}
 
-	if err := fetch(oldFile.Name(), vers); err != nil {
-		return fmt.Errorf("%v", err)
+	newName := fmt.Sprintf("2fa-v%s", latest)
+	err = fetch(ctx, newName, latest)
+	if err != nil {
+		err = fmt.Errorf("%v", err)
+		return err
 	}
 
 	return nil
