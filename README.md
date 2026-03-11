@@ -5,3 +5,11 @@
 ```
 make app
 ```
+
+![photo](assets/1.png) 
+
+![photo](assets/2.png) 
+
+![photo](assets/3.png) 
+
+![photo](assets/4.png) 
