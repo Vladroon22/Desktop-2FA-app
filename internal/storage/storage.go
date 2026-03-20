@@ -85,10 +85,14 @@ func (km *KeyManager) withReadAccess(operation func() error) error {
 	return operation()
 }
 
-func (km *KeyManager) SaveAPIKey(keyName string, apiKey string) error {
-	username := fmt.Sprintf("key_%s", keyName)
+func (km *KeyManager) SaveAPIKey(key string, apiKey string) error {
+	username := fmt.Sprintf("key_%s", key)
 
-	km.config.Usernames[keyName] = username
+	if _, ok := km.config.Usernames[key]; ok {
+		return fmt.Errorf("duplicated key")
+	}
+
+	km.config.Usernames[key] = username
 
 	if err := keyring.Set(km.serviceName, username, apiKey); err != nil {
 		return fmt.Errorf("failed to save API key: %w", err)
@@ -97,10 +101,10 @@ func (km *KeyManager) SaveAPIKey(keyName string, apiKey string) error {
 	return km.saveConfig()
 }
 
-func (km *KeyManager) GetAPIKey(keyName string) (string, error) {
-	username, exists := km.config.Usernames[keyName]
+func (km *KeyManager) getAPIKey(key string) (string, error) {
+	username, exists := km.config.Usernames[key]
 	if !exists {
-		return "", fmt.Errorf("API key %s not found", keyName)
+		return "", fmt.Errorf("API key %s not found", key)
 	}
 
 	secret, err := keyring.Get(km.serviceName, username)
@@ -181,7 +185,7 @@ func (km *KeyManager) List() map[string]string {
 
 	m := make(map[string]string, len(km.config.Usernames))
 	for k := range km.config.Usernames {
-		s, err := km.GetAPIKey(k)
+		s, err := km.getAPIKey(k)
 		if err != nil {
 			log.Println(err)
 			continue

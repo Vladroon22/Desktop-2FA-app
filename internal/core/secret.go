@@ -3,12 +3,25 @@ package core
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 )
 
-// Generates crypto-graphical safe random secret for TOTP
+var (
+	ErrEmptyURI         = errors.New("empty URI")
+	ErrInvalidURI       = errors.New("invalid URI format")
+	ErrWrongURI         = errors.New("wrong URI scheme or host")
+	ErrSecretEmpty      = errors.New("secret is empty")
+	ErrTooShortSecret   = errors.New("secret is too short")
+	ErrWrongSecret      = errors.New("invalid secret format")
+	ErrInvalidPath      = errors.New("invalid path format")
+	ErrEmptyAccountName = errors.New("account name is empty")
+	ErrEmptyIssuer      = errors.New("issuer name is empty")
+	ErrConfigEmpty      = errors.New("wrong config")
+)
+
 func GenerateRandomSecret() (string, error) {
 	secretLength := 20
 
@@ -37,13 +50,11 @@ func GenerateSecretWithURI(issuer, accountName string) (secret, uri string, err 
 	return secret, uri, nil
 }
 
-// ValidateSecret check validity of secret
 func ValidateSecret(secret string) error {
 	secret = strings.ToUpper(strings.ReplaceAll(secret, " ", ""))
 
-	// check len (minimum recommended - 16 symbols base32 = 80 бит)
 	if len(secret) < 16 {
-		return fmt.Errorf("секрет слишком короткий, минимум 16 символов")
+		return ErrTooShortSecret
 	}
 
 	allowedChars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -53,7 +64,6 @@ func ValidateSecret(secret string) error {
 		}
 	}
 
-	// decoding secret to validate
 	if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret); err != nil {
 		return fmt.Errorf("incorrect format of base32: %w", err)
 	}

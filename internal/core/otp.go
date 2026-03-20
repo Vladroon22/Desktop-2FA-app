@@ -15,6 +15,10 @@ type OTPConfig struct {
 }
 
 func GenerateOTP(tm time.Time, secret string) (string, error) {
+	if secret == "" {
+		return "", ErrSecretEmpty
+	}
+
 	code, err := totp.GenerateCode(secret, tm)
 	if err != nil {
 		fmt.Println(err)
@@ -25,13 +29,17 @@ func GenerateOTP(tm time.Time, secret string) (string, error) {
 }
 
 func ParseOTPAuthURI(uri string) (string, OTPConfig, error) {
+	if uri == "" {
+		return "", OTPConfig{}, ErrEmptyURI
+	}
+
 	u, err := url.Parse(uri)
 	if err != nil {
-		return "", OTPConfig{}, err
+		return "", OTPConfig{}, ErrInvalidURI
 	}
 
 	if u.Scheme != "otpauth" || u.Host != "totp" {
-		return "", OTPConfig{}, fmt.Errorf("неверный URI схемы")
+		return "", OTPConfig{}, ErrConfigEmpty
 	}
 
 	query := u.Query()
@@ -39,6 +47,10 @@ func ParseOTPAuthURI(uri string) (string, OTPConfig, error) {
 	config := OTPConfig{
 		AccountName: query.Get("ACCOUNT"),
 		Issuer:      query.Get("issuer"),
+	}
+
+	if len(secret) < 16 {
+		return "", OTPConfig{}, ErrTooShortSecret
 	}
 
 	path := strings.TrimPrefix(u.Path, "/")

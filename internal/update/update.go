@@ -14,6 +14,11 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+const (
+	UpToDate   = "You're up-to-date"
+	OverToDate = "You're is too up-to-dated"
+)
+
 type releases struct {
 	TagName    string `json:"tag_name"`
 	Name       string `json:"name"`
@@ -24,7 +29,7 @@ func fetchVersions(c context.Context) (string, error) {
 	_, cancel := context.WithTimeout(c, time.Second*15)
 	defer cancel()
 
-	url := ("https://api.github.com/repos/Vladroon22/Desktop-2FA-app/releases")
+	url := "https://api.github.com/repos/Vladroon22/Desktop-2FA-app/releases"
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -82,12 +87,8 @@ func fetch(c context.Context, filename, vers string) error {
 	}
 
 	switch OS {
-	case "windows":
-		if err := applyForWin(filename, resp.Body); err != nil {
-			return err
-		}
-	case "linux":
-		if err := applyForUnix(filename, resp.Body); err != nil {
+	case "windows", "linux":
+		if err := applyForOS(filename, resp.Body); err != nil {
 			return err
 		}
 	default:
@@ -97,25 +98,7 @@ func fetch(c context.Context, filename, vers string) error {
 	return nil
 }
 
-func applyForWin(filename string, rb io.ReadCloser) error {
-	newFile, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("create file: %v", err.Error())
-	}
-	defer newFile.Close()
-
-	if _, err := io.Copy(newFile, rb); err != nil {
-		return fmt.Errorf("%v", err.Error())
-	}
-
-	if err := newFile.Chmod(0755); err != nil {
-		return fmt.Errorf("chmod warning (Windows): %v", err)
-	}
-
-	return nil
-}
-
-func applyForUnix(filename string, rb io.ReadCloser) error {
+func applyForOS(filename string, rb io.ReadCloser) error {
 	newFile, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("create file: %v", err.Error())
@@ -152,17 +135,14 @@ func delete() error {
 }
 
 func Fetch(ctx context.Context, currVers string) error {
-	const (
-		UpToDate   = "You're up-to-date"
-		OverToDate = "You're is too up-to-dated"
-	)
+
 	var (
 		err    error
 		latest string
 	)
 
 	defer func(err error) {
-		if err != nil && err.Error() != UpToDate {
+		if err != nil && (err.Error() != UpToDate || err.Error() != OverToDate) {
 			delete()
 		}
 	}(err)

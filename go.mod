@@ -46,6 +46,6 @@ require (
 require (
 	fyne.io/fyne/v2 v2.7.1
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.6
 )

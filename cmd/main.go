@@ -24,12 +24,8 @@ import (
 )
 
 var (
-	appVersion string
+	AppVersion string
 )
-
-func GetVersion() string {
-	return appVersion
-}
 
 // Структура для хранения данных приложения
 type AppItem struct {
@@ -42,7 +38,7 @@ type AppItem struct {
 }
 
 func main() {
-	v := GetVersion()
+	log.Println("current version:", AppVersion)
 
 	store, err := storage.NewKeyManager("Custom-2FA")
 	if err != nil || store == nil {
@@ -91,11 +87,11 @@ func main() {
 	if len(data) > 0 {
 		appItems = make([]AppItem, 0, len(store.List()))
 
-		now := time.Now()
-		rand.Seed(time.Now().UnixNano())
+		rand.New(rand.NewSource(time.Now().UnixNano()))
 		for k, v := range data {
 			item := AppItem{ID: nextID}
 
+			now := time.Now()
 			code, err := core.GenerateOTP(now, v)
 			if err == nil {
 				item.Code = code
@@ -330,7 +326,7 @@ func main() {
 	})
 
 	IsUpToDate := widget.NewButton("Check for Updates", func() {
-		if err := update.Fetch(context.Background(), v); err != nil {
+		if err := update.Fetch(context.Background(), AppVersion); err != nil {
 			dialog.ShowInformation("Result of checking", err.Error(), window)
 		} else {
 			myApp.Quit()
