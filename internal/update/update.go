@@ -14,6 +14,10 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+var (
+	OS string
+)
+
 const (
 	UpToDate   = "You're up-to-date"
 	OverToDate = "You're is too up-to-dated"
@@ -56,7 +60,6 @@ func fetch(c context.Context, filename, vers string) error {
 	defer cancel()
 
 	var apiURL string
-	OS := runtime.GOOS
 
 	switch OS {
 	case "linux":
@@ -131,21 +134,20 @@ func delete() error {
 		return fmt.Errorf("%v", err)
 	}
 
+	if OS == "windows" {
+		time.Sleep(200 * time.Millisecond)
+	}
+
 	return os.Remove(oldFile.Name())
 }
 
 func Fetch(ctx context.Context, currVers string) error {
+	OS = runtime.GOOS
 
 	var (
 		err    error
 		latest string
 	)
-
-	defer func(err error) {
-		if err != nil && (err.Error() != UpToDate || err.Error() != OverToDate) {
-			delete()
-		}
-	}(err)
 
 	latest, err = fetchVersions(ctx)
 	if err != nil {
@@ -160,10 +162,23 @@ func Fetch(ctx context.Context, currVers string) error {
 		return fmt.Errorf("%v", OverToDate)
 	}
 
-	newName := fmt.Sprintf("2fa-v%s", latest)
+	var newName string
+	switch OS {
+	case "linux":
+		newName = fmt.Sprintf("2fa-v%s", latest)
+	case "windows":
+		newName = fmt.Sprintf("2fa-v%s.exe", latest)
+	default:
+		return fmt.Errorf("it isn't implemented for your %s", OS)
+	}
+
 	err = fetch(ctx, newName, latest)
 	if err != nil {
 		return fmt.Errorf("%v", err)
+	}
+
+	if err := delete(); err != nil && (err.Error() != UpToDate || err.Error() != OverToDate) {
+		return fmt.Errorf("delete error: %v", err)
 	}
 
 	return nil
