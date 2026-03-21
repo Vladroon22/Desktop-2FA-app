@@ -120,6 +120,10 @@ func applyForOS(filename string, rb io.ReadCloser) error {
 }
 
 func delete() error {
+	if OS == "windows" {
+		return nil
+	}
+
 	currExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("access to current executable wasn't got: %v", err)
@@ -129,16 +133,7 @@ func delete() error {
 		return nil
 	}
 
-	oldFile, err := os.Stat(currExe)
-	if err != nil {
-		return fmt.Errorf("%v", err)
-	}
-
-	if OS == "windows" {
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	return os.Remove(oldFile.Name())
+	return os.Remove(currExe)
 }
 
 func Fetch(ctx context.Context, currVers string) error {
