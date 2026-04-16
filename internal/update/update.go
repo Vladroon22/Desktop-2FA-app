@@ -30,7 +30,7 @@ type releases struct {
 }
 
 func fetchVersions(c context.Context) (string, error) {
-	_, cancel := context.WithTimeout(c, time.Second*15)
+	_, cancel := context.WithTimeout(c, time.Second*30)
 	defer cancel()
 
 	url := "https://api.github.com/repos/Vladroon22/Desktop-2FA-app/releases"
@@ -56,7 +56,7 @@ func fetchVersions(c context.Context) (string, error) {
 }
 
 func fetch(c context.Context, filename, vers string) error {
-	ctx, cancel := context.WithTimeout(c, time.Second*15)
+	ctx, cancel := context.WithTimeout(c, time.Second*20)
 	defer cancel()
 
 	var apiURL string
@@ -69,7 +69,7 @@ func fetch(c context.Context, filename, vers string) error {
 	}
 
 	client := &http.Client{
-		Timeout: time.Second * 15,
+		Timeout: time.Second * 20,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
